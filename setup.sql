@@ -1,15 +1,14 @@
 -- =============================================================================
 -- SWT Tokyo HO1216 / 初めてのSnowflake AI 〜ビジネスユーザ編〜
--- 01_setup.sql : ハンズオン環境を作成する
+-- setup.sql : ハンズオン環境を作成する
 --
 -- 実行者   : ACCOUNTADMIN
--- 前提     : 00_preflight.sql が全てPASSしていること
 --            報告書PDF 4本を内部ステージへアップロードすること
 --            （セクション6で止まるので、README の手順でアップロードして
 --              このファイルを最初から再実行する。既存オブジェクトは作り直される）
 --
 -- 【社内版】各自のデモ/Trialアカウントで ACCOUNTADMIN が1人で実行する前提。
---   SWT当日版にあった参加者・講師ユーザーの作成、Per-user Quota、
+--   SWT当日版にあった講師ユーザーの作成、Per-user Quota、
 --   公開S3の外部ステージは削除している。
 -- 実行時間 : 約6〜10分（Cortex Search 3本の初期化とPDF4本の解析を含む）
 --
@@ -44,7 +43,7 @@
 --      含まれていない。2026-09-03時点の実測では4本すべて本文を完全に取得でき、
 --      キーフレーズ（計画比98パーセントで着地 / 影響は軽微 / 欠品 /
 --      納品数量 / 在庫）も検出できている。品質劣化を検知するため
---      sql/02_verify.sql のアサーションを当日まで回すこと。
+--      SWT当日版では専用の検証SQLで確認していた（社内版には同梱しない）。
 --      既知の誤読: LAYOUTモードは文書番号を RPT-5017-P042 と読む（S→5）。
 --      REPORT_ID はメタデータ側から与えるため実害はない。
 --
@@ -58,6 +57,9 @@
 -- =============================================================================
 
 USE ROLE ACCOUNTADMIN;
+
+-- 日付は CURRENT_DATE 基準で作るため、日本時間で日付を切る。
+ALTER SESSION SET TIMEZONE = 'Asia/Tokyo';
 
 -- Agent の tool_resources が COMPUTE_WH を前提にしている。無ければ作る。
 CREATE WAREHOUSE IF NOT EXISTS COMPUTE_WH
@@ -466,7 +468,7 @@ ALTER STAGE SWT_CW_HANDSON.DOCUMENTS.STG_SOURCE_PDF REFRESH;
 EXECUTE IMMEDIATE $$
 DECLARE
   pdf_missing EXCEPTION (-20001,
-    '報告書PDFが4本揃っていない。out/pdf/ の *_月次業績報告_*.pdf を @SWT_CW_HANDSON.DOCUMENTS.STG_SOURCE_PDF にアップロードしてから 01_setup.sql を再実行する');
+    '報告書PDFが4本揃っていない。out/pdf/ の *_月次業績報告_*.pdf を @SWT_CW_HANDSON.DOCUMENTS.STG_SOURCE_PDF にアップロードしてから setup.sql を再実行する');
 BEGIN
   LET n INTEGER := (
     SELECT COUNT(*)
@@ -793,7 +795,7 @@ ALTER TABLE SWT_CW_HANDSON.DOCUMENTS.CUSTOMER_REVIEW SET CHANGE_TRACKING = TRUE;
 -- 9. Cortex Search Service: 社内文書コーパス
 --    TARGET_LAGは1日。ハンズオン中に文書は変化しないため十分。
 --    INITIALIZE = ON_CREATE のため、作成直後はindexing_stateがBUILDINGになる。
---    02_verify.sql でACTIVEを確認してから参加者へ配布する。
+--    SHOW CORTEX SEARCH SERVICES で SERVING_STATE が RUNNING になってから使う。
 -- =============================================================================
 CREATE OR REPLACE CORTEX SEARCH SERVICE SWT_CW_HANDSON.DOCUMENTS.ENTERPRISE_DOCUMENT_SEARCH
   ON body
@@ -1083,7 +1085,7 @@ CREATE OR REPLACE SEMANTIC VIEW SWT_CW_HANDSON.SEMANTIC.RETAIL_PERFORMANCE
 --      本ハンズオンは使い捨てTrialアカウントかつ架空データのみのため許容する。
 --
 --    このパラメータが false のままでも Agent の CREATE は成功する。
---    実行時に初めて失敗するため 02_verify.sql で値を検査している。
+--    実行時に初めて失敗するため SWT当日版では検証SQLで値を検査していた。
 -- =============================================================================
 ALTER ACCOUNT SET ENABLE_CORTEX_WEBSEARCH = TRUE;
 
@@ -1118,7 +1120,7 @@ ALTER ACCOUNT SET ENABLE_CORTEX_WEBSEARCH = TRUE;
 --    ガバナンス付録は Cortex Analyst（セマンティックビュー）専用とする。
 --    Analyst は生成したSQLを呼び出し元ロールで実行するため、
 --    マスキングと行アクセスが確実に効く。
---    02_verify.sql の [21] で「Searchサービスが存在しないこと」を検査している。
+--    SWT当日版では検証SQLで「Searchサービスが存在しないこと」を検査している。
 --
 --    ■ 適用順序
 --
@@ -2560,7 +2562,7 @@ CREATE OR REPLACE AGENT SWT_CW_HANDSON.AI.BUSINESS_DECISION_AGENT_3
 --
 --   WHEN OTHER は「追加済み」以外のエラーも飲み込む。
 --   エージェント名を間違えても静かに通ってしまうため、
---   登録できたかどうかは 02_verify.sql の [10] と
+--   登録できたかどうかは SHOW AGENTS と
 --   CoWorkの画面で必ず目視確認すること。
 --
 --   EXECUTE IMMEDIATE で包んでいる理由。
@@ -2607,8 +2609,8 @@ $$;
 -- =============================================================================
 -- 14. 権限の付与
 --
---   【社内版】SWT当日版の参加者ユーザー5名・講師ユーザー3名・
---   Per-user Quota は作らない。実行者本人が SWT_PARTICIPANT に切り替えて
+--   【社内版】SWT当日版の講師ユーザー3名と
+--   Per-user Quota は作らない。参加者ユーザー5名（USER1〜5）は作る。実行者本人が SWT_PARTICIPANT に切り替えて
 --   参加者と同じ見え方を確認できるよう、ロールを自分に付与する。
 -- =============================================================================
 
@@ -2628,7 +2630,114 @@ GRANT USAGE ON SNOWFLAKE INTELLIGENCE SNOWFLAKE_INTELLIGENCE_OBJECT_DEFAULT
 
 
 -- ---------------------------------------------------------------------------
--- 14.2 実行者本人に参加者ロールを付与
+-- 14.2 参加者ユーザー（5名）
+--
+--    ユーザー名を USER1〜USER5 にしている理由。
+--    参加者が印刷物を見ながらログイン画面に手入力する。
+--    アカウントが20個に分かれているのでアカウント識別子側で一意になる。
+--
+--    ■ 各プロパティの理由
+--
+--    MUST_CHANGE_PASSWORD = FALSE
+--      既定は TRUE。省くと50名全員が初回ログインでパスワード変更を求められ、
+--      印刷したパスワードがその場で無効になる。
+--
+--    DEFAULT_ROLE / DEFAULT_WAREHOUSE
+--      CoWork はログイン時にこの2つでセッションを初期化する。
+--      未設定だと参加者が毎回ロールとウェアハウスを切り替える必要がある。
+--
+--    ALLOWED_INTERFACES = (SNOWFLAKE_INTELLIGENCE)
+--      参加者を CoWork だけに閉じ込める。ai.snowflake.com 以外の
+--      Snowsight画面には入れなくなり、誤操作と迷子を防げる。
+--      代償として、参加者はワークシートやモニタリングタブを見られない。
+--      ツール選択の証跡を見せる場面は講師デモに寄せること。
+--
+--      この制限下でも code_execution は動く。実畲3（グラフ）と
+--      実畲5（PPTX生成）を参加者ユーザーで実機確認済み（2026-09-08）。
+--      ログインできるインターフェースを絞る設定であり、
+--      Agentがサーバー側で実行するコードには影響しない。
+--
+--    パスワード
+--      社内版でもそのまま使えるが、共有する前に必ず変更すること。
+
+--    EMAIL を設定しない
+--      架空の参加者枠であり通知を送る相手がいない。
+--      クォータのブロック通知も送らない設定にしている。
+--
+--    TYPE = PERSON
+--      Trialアカウントは MFA 強制の対象外なので、人間ユーザーのまま
+--      単要素パスワードでログインできる。
+--      Trial以外のアカウントでは初回ログイン時にMFA登録を求められる。
+--      LEGACY_SERVICE は2026年8〜10月のPhase 3で全廃されるため使わない。
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE USER USER1
+  PASSWORD = 'SwtTokyo2026'
+  MUST_CHANGE_PASSWORD = FALSE
+  TYPE = PERSON
+  DEFAULT_ROLE = SWT_PARTICIPANT
+  DEFAULT_SECONDARY_ROLES = ('ALL')
+  DEFAULT_WAREHOUSE = COMPUTE_WH
+  DEFAULT_NAMESPACE = SWT_CW_HANDSON.CORE
+  DISPLAY_NAME = '参加者 1'
+  COMMENT = 'SWT Tokyo 2026 ハンズオン参加者';
+GRANT ROLE SWT_PARTICIPANT TO USER USER1;
+ALTER USER USER1 SET ALLOWED_INTERFACES = (SNOWFLAKE_INTELLIGENCE);
+
+CREATE OR REPLACE USER USER2
+  PASSWORD = 'SwtTokyo2026'
+  MUST_CHANGE_PASSWORD = FALSE
+  TYPE = PERSON
+  DEFAULT_ROLE = SWT_PARTICIPANT
+  DEFAULT_SECONDARY_ROLES = ('ALL')
+  DEFAULT_WAREHOUSE = COMPUTE_WH
+  DEFAULT_NAMESPACE = SWT_CW_HANDSON.CORE
+  DISPLAY_NAME = '参加者 2'
+  COMMENT = 'SWT Tokyo 2026 ハンズオン参加者';
+GRANT ROLE SWT_PARTICIPANT TO USER USER2;
+ALTER USER USER2 SET ALLOWED_INTERFACES = (SNOWFLAKE_INTELLIGENCE);
+
+CREATE OR REPLACE USER USER3
+  PASSWORD = 'SwtTokyo2026'
+  MUST_CHANGE_PASSWORD = FALSE
+  TYPE = PERSON
+  DEFAULT_ROLE = SWT_PARTICIPANT
+  DEFAULT_SECONDARY_ROLES = ('ALL')
+  DEFAULT_WAREHOUSE = COMPUTE_WH
+  DEFAULT_NAMESPACE = SWT_CW_HANDSON.CORE
+  DISPLAY_NAME = '参加者 3'
+  COMMENT = 'SWT Tokyo 2026 ハンズオン参加者';
+GRANT ROLE SWT_PARTICIPANT TO USER USER3;
+ALTER USER USER3 SET ALLOWED_INTERFACES = (SNOWFLAKE_INTELLIGENCE);
+
+CREATE OR REPLACE USER USER4
+  PASSWORD = 'SwtTokyo2026'
+  MUST_CHANGE_PASSWORD = FALSE
+  TYPE = PERSON
+  DEFAULT_ROLE = SWT_PARTICIPANT
+  DEFAULT_SECONDARY_ROLES = ('ALL')
+  DEFAULT_WAREHOUSE = COMPUTE_WH
+  DEFAULT_NAMESPACE = SWT_CW_HANDSON.CORE
+  DISPLAY_NAME = '参加者 4'
+  COMMENT = 'SWT Tokyo 2026 ハンズオン参加者';
+GRANT ROLE SWT_PARTICIPANT TO USER USER4;
+ALTER USER USER4 SET ALLOWED_INTERFACES = (SNOWFLAKE_INTELLIGENCE);
+
+CREATE OR REPLACE USER USER5
+  PASSWORD = 'SwtTokyo2026'
+  MUST_CHANGE_PASSWORD = FALSE
+  TYPE = PERSON
+  DEFAULT_ROLE = SWT_PARTICIPANT
+  DEFAULT_SECONDARY_ROLES = ('ALL')
+  DEFAULT_WAREHOUSE = COMPUTE_WH
+  DEFAULT_NAMESPACE = SWT_CW_HANDSON.CORE
+  DISPLAY_NAME = '参加者 5'
+  COMMENT = 'SWT Tokyo 2026 ハンズオン参加者';
+GRANT ROLE SWT_PARTICIPANT TO USER USER5;
+ALTER USER USER5 SET ALLOWED_INTERFACES = (SNOWFLAKE_INTELLIGENCE);
+
+
+-- ---------------------------------------------------------------------------
+-- 14.3 実行者本人に参加者ロールを付与
 --
 --    CoWork の画面右上でロールを SWT_PARTICIPANT に切り替えると、
 --    ハンズオン参加者と同じ権限・同じ付録Fの見え方（関東107件・PIIマスク）になる。
@@ -2645,7 +2754,7 @@ $$;
 
 -- =============================================================================
 -- 15. 作成結果の確認
---    詳細な検証は 02_verify.sql で行う。
+--    ここでは件数だけを確認する。
 --    ここでは件数だけを見て、途中で落ちていないことを確かめる。
 -- =============================================================================
 SELECT
@@ -2658,7 +2767,7 @@ SELECT
   (SELECT COUNT(*) FROM SWT_CW_HANDSON.DOCUMENTS.CUSTOMER_REVIEW)    AS customer_reviews,
   (SELECT MIN(sales_date) FROM SWT_CW_HANDSON.CORE.FACT_STORE_PRODUCT_DAY) AS data_start,
   (SELECT MAX(sales_date) FROM SWT_CW_HANDSON.CORE.FACT_STORE_PRODUCT_DAY) AS data_end,
-  '次は 02_verify.sql を実行する'                                    AS next_step;
+  'ai.snowflake.com に USER1〜5 でログインして確認する'                                    AS next_step;
 
 -- アカウント識別子、アカウント/サーバーURL、アカウントロケーターを取得
 SELECT 
