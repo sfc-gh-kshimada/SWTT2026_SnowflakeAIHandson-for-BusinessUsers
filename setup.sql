@@ -9,8 +9,6 @@
 --
 -- 【社内版】各自のデモ/Trialアカウントで ACCOUNTADMIN が1人で実行する前提。
 --   SWT当日版にあった講師ユーザーの作成、Per-user Quota、
---   公開S3の外部ステージは削除している。
--- 実行時間 : 約6〜10分（Cortex Search 3本の初期化とPDF4本の解析を含む）
 --
 -- 作成物
 --   SWT_CW_HANDSON.CORE       : 店舗、商品、店舗商品日次実績

@@ -70,8 +70,6 @@ Snowsight のワークシートに `setup.sql` を開き、**すべて実行**�
 3. 追加課題では `out/xlsx/` の Excel を CoWork にアップロードします
 4. PPTX 生成の実習では、`out/pptx/` のブランドテンプレートとサンプルを参考にします
 
-`out/pptx/投影スライド_初めてのSnowflakeAI_ビジネスユーザ編.pptx` は、SWT当日に投影した進行スライドです。
-
 ## 作成されるオブジェクト
 
 すべて `SWT_CW_HANDSON` データベースの配下に作成されます。
@@ -93,27 +91,6 @@ Snowsight のワークシートに `setup.sql` を開き、**すべて実行**�
 - **`ALTER ACCOUNT SET ENABLE_CORTEX_WEBSEARCH = TRUE`**: Agent3 の Web検索に必要です。検索クエリは Brave Search API を経由して Snowflake の外に出ます。顧客環境で有効化する場合は必ず事前に合意を取ってください
 - **CoWork の既定オブジェクトへの Agent 追加**: 同じアカウントの他ユーザーの CoWork にも Agent が表示されます
 - **`USER1`〜`USER5` の作成**: `CREATE OR REPLACE USER` のため、同名のユーザーがいると上書きされます。事前に `SHOW USERS LIKE 'USER%';` で確認してください
-
-## 撤収
-
-使い終わったら、少なくとも参加者ユーザーは無効化してください。パスワードがリポジトリに書かれているためです。
-
-```sql
-USE ROLE ACCOUNTADMIN;
-ALTER USER USER1 SET DISABLED = TRUE;  -- USER2〜USER5 も同様
-ALTER WAREHOUSE COMPUTE_WH SUSPEND;
--- 完全に消す場合（取り消し不可）
--- DROP USER USER1; ...
--- DROP DATABASE SWT_CW_HANDSON;
--- DROP ROLE SWT_PARTICIPANT; DROP ROLE SWT_DATA_STEWARD;
-```
-
-## 設計上の注意
-
-- **日付は `CURRENT_DATE` 基準です。** いつ実行しても「直近90日」が成立します。ただし報告書PDFの本文に書かれた報告日は、PDFを生成した時点の絶対日付です
-- **報告書の本文は `AI_PARSE_DOCUMENT` がPDFから読み取ります。** 日本語は公式のサポート言語に含まれていません。`SELECT REPORT_ID, BODY FROM SWT_CW_HANDSON.DOCUMENTS.MANAGER_REPORT;` で本文が取れていることを確認してください。退避手順は `setup.sql` のセクション7末尾にあります
-- **Semantic View の権限は `SELECT` です。** `GRANT USAGE ON SEMANTIC VIEW` は失敗します（2026-09-08 実測）
-- **`ALTER AGENT` はありません。** Agent は `CREATE OR REPLACE` で作り直します。Snowsight で直した内容は `setup.sql` に書き戻さないと、次のセットアップで消えます
 
 ## ディレクトリ
 
