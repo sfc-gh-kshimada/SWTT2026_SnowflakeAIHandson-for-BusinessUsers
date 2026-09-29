@@ -8,7 +8,7 @@
 --              このファイルを最初から再実行する。既存オブジェクトは作り直される）
 --
 -- 【社内版】各自のデモ/Trialアカウントで ACCOUNTADMIN が1人で実行する前提。
---   SWT当日版にあった講師ユーザーの作成、Per-user Quota、
+--   SWT当日版にあった講師ユーザーの作成は削除している。
 --
 -- 作成物
 --   SWT_CW_HANDSON.CORE       : 店舗、商品、店舗商品日次実績
@@ -2607,8 +2607,8 @@ $$;
 -- =============================================================================
 -- 14. 権限の付与
 --
---   【社内版】SWT当日版の講師ユーザー3名と
---   Per-user Quota は作らない。参加者ユーザー5名（USER1〜5）は作る。実行者本人が SWT_PARTICIPANT に切り替えて
+--   【社内版】SWT当日版の講師ユーザー3名は作らない。
+--   参加者ユーザー5名（USER1〜5）と Per-user Quota は作る。実行者本人が SWT_PARTICIPANT に切り替えて
 --   参加者と同じ見え方を確認できるよう、ロールを自分に付与する。
 -- =============================================================================
 
@@ -2748,6 +2748,54 @@ BEGIN
   RETURN 'SWT_PARTICIPANT を ' || CURRENT_USER() || ' に付与した';
 END;
 $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 14.4 Per-user Quota（AIドメイン・日次15クレジット）
+--
+-- ---------------------------------------------------------------------------
+CREATE SCHEMA IF NOT EXISTS SWT_CW_HANDSON.OPS
+  COMMENT = 'ハンズオン運営用。参加者には見せない';
+
+CREATE TAG IF NOT EXISTS SWT_CW_HANDSON.OPS.QUOTA_EXEMPT
+  COMMENT = 'STAFF を設定したユーザーをクォータの対象外にする';
+
+-- 実行者本人（管理者）を除外する。他に除外したいユーザーがいれば同様に STAFF を付ける。
+-- ユーザー名は作成者によって変わるため CURRENT_USER() から動的に組み立てる。
+-- IDENTIFIER(CURRENT_USER()) は使えない。IDENTIFIER は定数を要求する。
+EXECUTE IMMEDIATE $$
+BEGIN
+  EXECUTE IMMEDIATE
+    'ALTER USER "' || CURRENT_USER()
+    || '" SET TAG SWT_CW_HANDSON.OPS.QUOTA_EXEMPT = ''STAFF''';
+EXCEPTION
+  WHEN OTHER THEN
+    -- 既に付与済みの場合を無視する
+    NULL;
+END;
+$$;
+
+CREATE SNOWFLAKE.CORE.QUOTA IF NOT EXISTS SWT_CW_HANDSON.OPS.AI_QUOTA_15();
+
+CALL SWT_CW_HANDSON.OPS.AI_QUOTA_15!ADD_SHARED_RESOURCE('SNOWFLAKE INTELLIGENCE');
+CALL SWT_CW_HANDSON.OPS.AI_QUOTA_15!ADD_SHARED_RESOURCE('CORTEX AGENT');
+CALL SWT_CW_HANDSON.OPS.AI_QUOTA_15!ADD_SHARED_RESOURCE('AI FUNCTION');
+
+-- 全ユーザーを対象にしたまま、STAFF タグの付いたユーザーだけを除外する
+CALL SWT_CW_HANDSON.OPS.AI_QUOTA_15!EXCLUDE_USERS('TAG', [
+  [(SELECT SYSTEM$REFERENCE('TAG', 'SWT_CW_HANDSON.OPS.QUOTA_EXEMPT',
+                            'SESSION', 'APPLYBUDGET')), 'STAFF']
+]);
+
+-- 日次15クレジット。月次は設定しない（ハンズオンは1日で終わる）
+CALL SWT_CW_HANDSON.OPS.AI_QUOTA_15!SET_PER_USER_LIMIT(15, 'DAILY');
+
+-- 第1引数 TRUE  : 上限到達でAIリクエストをブロックする
+-- 第2引数 FALSE : ブロック時に参加者へメールを送らない。
+--                 参加者にEMAILを設定していないため通知が必ず失敗し、
+--                 イベントテーブルにエラーが溜まる。
+CALL SWT_CW_HANDSON.OPS.AI_QUOTA_15!SET_BLOCK_ENFORCEMENT_ENABLED(TRUE, FALSE);
+
 
 
 -- =============================================================================
