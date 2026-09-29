@@ -45,6 +45,35 @@ PDF が4本揃っていない状態で先に進むと、チェック処理が `�
   snow stage copy "out/pdf/*_月次業績報告_*.pdf" @SWT_CW_HANDSON.DOCUMENTS.STG_SOURCE_PDF
   ```
 
+### 案: GitHub 連携で PDF を格納する（未検証）
+
+このリポジトリは Public なので、Snowflake の Git 連携を認証なしで使えます。GitHub から直接ステージへコピーできるため、手動アップロードが不要になります。setup.sql の 460行目までを実行したあと、次を実行してから 462行目以降に進みます。
+
+```sql
+-- 認証なしの API Integration（アカウント単位のオブジェクト）
+CREATE API INTEGRATION IF NOT EXISTS SWT_GITHUB_API
+  API_PROVIDER = git_https_api
+  API_ALLOWED_PREFIXES = ('https://github.com/sfc-gh-kshimada')
+  ENABLED = TRUE;
+
+CREATE GIT REPOSITORY IF NOT EXISTS SWT_CW_HANDSON.DOCUMENTS.HANDSON_REPO
+  API_INTEGRATION = SWT_GITHUB_API
+  ORIGIN = 'https://github.com/sfc-gh-kshimada/SWTT2026_SnowflakeAIHandson-for-BusinessUsers.git';
+
+ALTER GIT REPOSITORY SWT_CW_HANDSON.DOCUMENTS.HANDSON_REPO FETCH;
+
+COPY FILES INTO @SWT_CW_HANDSON.DOCUMENTS.STG_SOURCE_PDF
+  FROM @SWT_CW_HANDSON.DOCUMENTS.HANDSON_REPO/branches/main/out/pdf/
+  PATTERN = '.*_月次業績報告_.*[.]pdf';
+```
+
+setup.sql のセクション6にこのブロックを組み込めば、setup.sql を上から一度流すだけでセットアップが完了します。
+
+注意点
+- **API Integration はアカウント単位のオブジェクトです。** 共有アカウントでは他のユーザーからも見えます
+- **外向きの通信が制限されたアカウントでは使えません。** ネットワークポリシーや PrivateLink の構成では GitHub に届かないため、手動アップロードを使ってください
+- **日本語ファイル名が `PATTERN` に一致するかは未検証です。** 462行目以降の4本チェックで取り込み結果を確認できます
+
 ## ログイン
 
 `ai.snowflake.com` に参加者ユーザー **`USER1`〜`USER5`** でログインします。パスワードは `setup.sql` のセクション14.2 にあります。共有する前に必ず変更してください。
